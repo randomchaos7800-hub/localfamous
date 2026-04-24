@@ -1,0 +1,43 @@
+# localfamous.toml — global configuration
+# Config files are read-only. Secrets come from environment variables or vault at runtime.
+
+[provider]
+# Default provider for personas that don't override
+format = "anthropic"
+model = "claude-haiku-4-5-20251001"
+max_tokens = 4096
+
+# Frontier model (for important/complex tasks)
+frontier_format = "anthropic"
+frontier_model = "claude-sonnet-4-6"
+frontier_key_env = "ANTHROPIC_API_KEY"
+
+# Local inference (optional — llama.cpp, Ollama, LM Studio, etc.)
+local_format = "openai"
+local_endpoint = "http://localhost:8081/v1"
+local_model = "local-model"
+
+# OpenRouter (optional)
+openrouter_format = "openai"
+openrouter_endpoint = "https://openrouter.ai/api/v1"
+openrouter_model = "google/gemma-3-27b-it"
+
+[context]
+memory_dir = "./memory"
+max_context_tokens = 32000
+
+[session]
+db_path = "./data/sessions.db"
+
+[loop]
+max_turns = 30
+
+[permissions]
+allow_shell = true
+allow_file_write = true
+# Tools that require user confirmation before execution (interactive mode only)
+require_confirmation = ["shell"]
+
+[logging]
+level = "INFO"
+log_dir = "./data/logs"

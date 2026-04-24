@@ -1,0 +1,20 @@
+[[task]]
+name = "morning-briefing"
+prompt = """Compile a morning briefing. Include:
+1. System health (disk usage, any failed services)
+2. A one-line weather summary for your city (web_search)
+3. One notable AI or tech headline from the last 24 hours
+
+Keep it tight. Bullet points. No fluff."""
+cron = "0 7 * * *"
+enabled = false  # set to true once Slack is configured
+
+[[task]]
+name = "hourly-health"
+prompt = """Check system health silently. Run:
+1. df -h / — disk usage
+2. systemctl --user is-failed — any failed user services
+
+Post to Slack only if something needs attention. Silent green is fine."""
+cron = "0 * * * *"
+enabled = false  # set to true once Slack is configured

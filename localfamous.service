@@ -1,0 +1,15 @@
+[Unit]
+Description=localfamous agent scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/localfamous
+ExecStart=/usr/bin/python3 main.py schedule
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=default.target

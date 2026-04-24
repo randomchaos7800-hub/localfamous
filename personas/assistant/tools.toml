@@ -1,0 +1,19 @@
+allowed_tools = [
+    "web_search",
+    "web_fetch",
+    "shell",
+    "file_read",
+]
+
+[provider]
+format = "anthropic"
+model = "claude-haiku-4-5-20251001"
+
+[context]
+level = "full"
+
+# Slack output (optional — remove if not using Slack)
+# [slack]
+# app_token_key = "slack_assistant_app_token"
+# bot_token_key = "slack_assistant_bot_token"
+# listen_channels = ["general"]

@@ -1,0 +1,18 @@
+allowed_tools = [
+    "web_fetch",
+    "web_search",
+    "file_read",
+    "shell",
+    "wiki_search",
+]
+
+[provider]
+# Use "anthropic" for Claude, "openai" for local inference / OpenRouter
+format = "anthropic"
+model = "claude-haiku-4-5-20251001"
+
+[context]
+# "none" = persona system.md only (fastest, good for interactive)
+# "summary" = named memory files only
+# "full" = all memory files
+level = "none"
