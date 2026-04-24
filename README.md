@@ -150,6 +150,66 @@ The `personas/assistant/` directory is an example to get you started. The `perso
 
 ---
 
+## Connecting to orchestra
+
+[orchestra](https://github.com/randomchaos7800-hub/orchestra) turns your AI conversation exports into a structured, searchable knowledge base. Pair it with localfamous and your agents can query everything you've ever discussed, researched, or decided.
+
+**1. Set up orchestra**
+
+```bash
+git clone https://github.com/randomchaos7800-hub/orchestra.git
+cd orchestra
+pip install -r requirements.txt
+
+# Export your conversations and run Capture
+python capture/extract.py --input ~/Downloads/claude-export.json
+
+# Compile the wiki
+python tools/compile.py
+```
+
+**2. Tell localfamous where it lives**
+
+In `config/localfamous.toml`:
+
+```toml
+[orchestra]
+path = "/path/to/your/orchestra"
+```
+
+Or set an environment variable:
+
+```bash
+export ORCHESTRA_PATH=/path/to/your/orchestra
+```
+
+**3. Add the tool to a persona**
+
+In `personas/assistant/tools.toml`:
+
+```toml
+allowed_tools = [
+    "web_search",
+    "shell",
+    "orchestra_search",   # ← add this
+]
+```
+
+**4. Use it**
+
+The agent now has a `orchestra_search` tool. It queries your knowledge base before answering questions about anything you've researched. No manual retrieval. The agent decides when to look things up.
+
+```
+you: what did we decide about the memory architecture?
+agent: [calls orchestra_search("memory architecture decision")]
+       → finds the relevant article from your conversation history
+       → answers with your actual decision, not a guess
+```
+
+The tool supports filtering by tag (`--tag agents`) and section (`--section concepts`) — see the orchestra README for how articles are organized.
+
+---
+
 ## Built On
 
 - Python 3.11+

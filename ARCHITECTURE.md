@@ -71,7 +71,11 @@ Drop a Python file into `tools/` with `SCHEMA` and `async def execute()`. It's a
 on next start. No registration needed.
 
 Built-in tools: `shell`, `file_read`, `file_write`, `web_search`, `web_fetch`,
-`slack_send`, `slack_read`, `telegram_send`.
+`slack_send`, `slack_read`, `telegram_send`, `orchestra_search`.
+
+`orchestra_search` queries an [orchestra](https://github.com/randomchaos7800-hub/orchestra)
+knowledge base — your compiled conversation history and research notes. Set `ORCHESTRA_PATH`
+or `[orchestra] path` in `localfamous.toml` to enable it.
 
 ## Stuck Loop Detection
 
