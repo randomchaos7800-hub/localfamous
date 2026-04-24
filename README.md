@@ -1,4 +1,4 @@
-# Build Your Own Always-On AI Agent
+# localfamous
 
 **A practical guide to running a personal Claude agent as a persistent service — with memory, a chat interface, scheduled jobs, and tool access.**
 
