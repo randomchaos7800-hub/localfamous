@@ -41,3 +41,9 @@ require_confirmation = ["shell"]
 [logging]
 level = "INFO"
 log_dir = "./data/logs"
+
+[contracts]
+enabled = true
+db_path = "./data/contracts.db"
+drift_warn = 0.15
+drift_alert = 0.30

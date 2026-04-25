@@ -332,10 +332,111 @@ def cmd_tasks(personas_dir: Path) -> None:
         print(f"{status}{t.name:<28} {t.persona:<15} {t.cron:<20} {next_run}")
 
 
+def cmd_contracts(args, frank_config: dict, personas_dir: Path, data_dir: Path) -> None:
+    """Show contract compliance stats."""
+    from contracts.spec import load_contracts
+    from contracts.store import ViolationStore
+
+    contracts_cfg = frank_config.get("contracts", {})
+    db_path = Path(contracts_cfg.get("db_path", str(data_dir / "contracts.db")))
+    drift_warn = contracts_cfg.get("drift_warn", 0.15)
+    drift_alert = contracts_cfg.get("drift_alert", 0.30)
+
+    if getattr(args, "list_contracts", False):
+        print(f"{'PERSONA':<20} {'TYPE':<6} {'ID':<30} TOOL")
+        print("-" * 75)
+        for persona_dir in sorted(personas_dir.iterdir()):
+            if not persona_dir.is_dir():
+                continue
+            try:
+                contract = load_contracts(persona_dir)
+            except ValueError as e:
+                print(f"{persona_dir.name:<20} ERROR: {e}")
+                continue
+            for clause in contract.hard:
+                tool = clause.tool if isinstance(clause.tool, str) else ",".join(clause.tool)
+                print(f"{persona_dir.name:<20} {'hard':<6} {clause.id:<30} {tool}")
+            for clause in contract.soft:
+                tool = clause.tool if isinstance(clause.tool, str) else ",".join(clause.tool)
+                print(f"{persona_dir.name:<20} {'soft':<6} {clause.id:<30} {tool}")
+        return
+
+    if not db_path.exists():
+        print("No contracts database found. Run some sessions first.")
+        return
+
+    store = ViolationStore(db_path)
+
+    def _drift_label(d: float) -> str:
+        if d >= drift_alert:
+            return "[ALERT]"
+        if d >= drift_warn:
+            return "[WARN]"
+        return "[OK]"
+
+    session_id = getattr(args, "session", None)
+    persona = getattr(args, "persona", None)
+    show_all = getattr(args, "all_sessions", False)
+
+    if session_id:
+        stats = store.get_session_stats(session_id)
+        if not stats:
+            print(f"No stats for session {session_id}")
+            return
+        label = _drift_label(stats.get("drift", 0))
+        print(f"\nPersona: {stats['persona']}  Session: {session_id[:8]}")
+        print(f"  Tool calls:      {stats['total_calls']}")
+        print(f"  Hard violations: {stats['hard_violations']}  (blocked)")
+        print(f"  Soft violations: {stats['soft_violations']}  (logged)")
+        print(f"  Recovery rate:   γ = {stats['gamma']:.2f}")
+        print(f"  Drift score:     D* = {stats['drift']:.3f}  {label}")
+        if stats.get("violations"):
+            print(f"\n  Recent violations:")
+            for v in stats["violations"][:5]:
+                print(f"    [{v['clause_id']}] {v['tool_name']} — {v['description']} at {v['timestamp']}")
+    elif persona:
+        days = 30 if show_all else 7
+        summary = store.get_persona_summary(persona, days=days)
+        if not summary.get("sessions"):
+            print(f"No data for persona '{persona}' in the last {days} days.")
+            return
+        avg_drift = summary.get("avg_drift") or 0.0
+        label = _drift_label(avg_drift)
+        print(f"\nPersona: {persona}  ({days}-day summary)")
+        print(f"  Sessions:        {summary['sessions']}")
+        print(f"  Total calls:     {summary['total_calls'] or 0}")
+        print(f"  Hard violations: {summary['hard_violations'] or 0}")
+        print(f"  Soft violations: {summary['soft_violations'] or 0}")
+        print(f"  Avg drift:       D* = {avg_drift:.3f}  {label}")
+        print(f"  Max drift:       D* = {(summary.get('max_drift') or 0.0):.3f}")
+        if summary.get("recent_violations"):
+            print(f"\n  Recent violations:")
+            for v in summary["recent_violations"][:5]:
+                print(f"    [{v['clause_id']}] {v['tool_name']} — {v['description']} at {v['timestamp']}")
+        sessions_list = store.list_sessions(persona)
+        if sessions_list:
+            print(f"\n  Recent sessions:")
+            print(f"  {'ID':<12} {'CALLS':<8} {'HARD':<6} {'SOFT':<6} {'DRIFT':<10} STATUS")
+            print(f"  " + "-" * 55)
+            for s in sessions_list:
+                label2 = _drift_label(s.get("drift", 0))
+                print(f"  {s['session_id'][:8]:<12} {s['total_calls']:<8} {s['hard_violations']:<6} {s['soft_violations']:<6} {s['drift']:.3f}{'':5} {label2}")
+    else:
+        all_sessions = store.list_sessions()
+        if not all_sessions:
+            print("No contract data found.")
+            return
+        print(f"\n{'SESSION':<12} {'PERSONA':<15} {'CALLS':<8} {'HARD':<6} {'SOFT':<6} {'DRIFT':<8} STATUS")
+        print("-" * 65)
+        for s in all_sessions:
+            label2 = _drift_label(s.get("drift", 0))
+            print(f"{s['session_id'][:8]:<12} {s['persona']:<15} {s['total_calls']:<8} {s['hard_violations']:<6} {s['soft_violations']:<6} {s['drift']:.3f}{'':4} {label2}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="frank",
-        description="Vitale Dynamics agent frank",
+        prog="localfamous",
+        description="localfamous — always-on AI agent harness",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
     parser.add_argument("--config-dir", default=None, help="Config directory")
@@ -365,6 +466,13 @@ def main() -> None:
 
     # tasks
     subs.add_parser("tasks", help="List scheduled tasks")
+
+    # contracts
+    p_contracts = subs.add_parser("contracts", help="Show contract compliance stats")
+    p_contracts.add_argument("--persona", "-p", default=None, help="Filter by persona")
+    p_contracts.add_argument("--session", "-s", default=None, help="Show stats for specific session ID")
+    p_contracts.add_argument("--all", dest="all_sessions", action="store_true", help="Show all-time data (default: 7 days)")
+    p_contracts.add_argument("--list", dest="list_contracts", action="store_true", help="List all loaded contracts")
 
     # bench
     p_bench = subs.add_parser("bench", help="Benchmark the local model through the frank")
@@ -407,6 +515,8 @@ def main() -> None:
         cmd_personas(personas_dir)
     elif args.command == "tasks":
         cmd_tasks(personas_dir)
+    elif args.command == "contracts":
+        cmd_contracts(args, frank_config, personas_dir, data_dir)
     elif args.command == "bench":
         asyncio.run(cmd_bench(args, frank_config, personas_dir, memory_dir, data_dir))
     elif args.command == "serve":

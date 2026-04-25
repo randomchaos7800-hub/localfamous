@@ -83,6 +83,7 @@ async def run(
     require_confirm: list[str] | None = None,
     ctx: dict | None = None,
     stream: bool = False,
+    contract_evaluator=None,
 ) -> tuple[str, list[dict]]:
     """
     Run the agentic loop.
@@ -149,6 +150,17 @@ async def run(
         async def _run_one(tc: ToolCall) -> tuple[ToolCall, str]:
             if on_tool_call:
                 on_tool_call(tc.name, tc.arguments)
+
+            # Contract pre-check
+            if contract_evaluator is not None:
+                violation = contract_evaluator.check_pre(tc.name, tc.arguments)
+                if violation is not None and violation.severity == "hard":
+                    log.warning(f"[contracts] Hard block: {violation.clause_id} on {tc.name}")
+                    r = f"[BLOCKED by contract '{violation.clause_id}'] {violation.description}"
+                    if len(r) > MAX_TOOL_OUTPUT:
+                        r = r[:MAX_TOOL_OUTPUT]
+                    return tc, r
+
             if tc.name not in available_names and tc.name:
                 close = _find_close_tool(tc.name, available_names)
                 hint = f" Did you mean '{close}'?" if close else ""
@@ -160,6 +172,11 @@ async def run(
                 log.warning(f"Hallucinated tool name: '{tc.name}'{' → suggest ' + close if close else ''}")
             else:
                 r = await _execute_tool(tc, active_tools, ctx or {}, require_confirm or [])
+
+            # Contract post-check
+            if contract_evaluator is not None:
+                contract_evaluator.check_post(tc.name, tc.arguments, r)
+
             if len(r) > MAX_TOOL_OUTPUT:
                 r = r[:MAX_TOOL_OUTPUT] + f"\n\n[truncated — {len(r)} chars total]"
             log.debug(f"Tool {tc.name} → {r[:200]}")

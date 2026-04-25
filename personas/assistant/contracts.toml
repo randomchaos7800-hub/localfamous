@@ -1,0 +1,42 @@
+# Assistant behavioral contracts
+#
+# Contracts enforce rules on every tool call at runtime.
+# hard = block execution and return an error to the model
+# soft = allow execution but log the violation for review
+#
+# Expressions are Python eval'd in a sandbox with these variables:
+#   command, path, query, content, url  — tool input kwargs
+#   result                               — tool output (postconditions only)
+# Helper functions: is_safe_path(p), contains_pii(s), matches(pattern, s)
+
+# ── Hard constraints (blocked before execution) ───────────────────────────────
+
+[[hard]]
+id = "no-destructive-shell"
+tool = "shell"
+description = "Shell must not run commands that destroy data or system files"
+expression = "not any(p in command for p in ['rm -rf /', 'rm -rf ~', 'mkfs', 'dd if=', 'shred /', 'wipefs'])"
+recovery = "reject"
+
+[[hard]]
+id = "safe-write-paths"
+tool = "file_write"
+description = "File writes must stay within the project directory or /tmp"
+expression = "is_safe_path(path)"
+recovery = "reject"
+
+# ── Soft constraints (logged but allowed) ─────────────────────────────────────
+
+[[soft]]
+id = "non-empty-result"
+tool = "*"
+description = "Tool results should not be empty"
+expression = "len(result.strip()) > 0"
+recovery = "warn"
+
+[[soft]]
+id = "search-query-length"
+tool = "web_search"
+description = "Search queries should be specific (5+ characters)"
+expression = "len(query) >= 5"
+recovery = "warn"
