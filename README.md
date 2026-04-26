@@ -265,6 +265,20 @@ allowed_tools = ["web_search", "orchestra_search"]
 
 ---
 
+## Example personas
+
+See [EXAMPLES.md](EXAMPLES.md) for five production personas with complete three-file configs:
+
+- **Kato** — ops monitor, morning briefings, AI news digest, GitHub scout
+- **CJ** — research writer, arXiv sweeps, weekly article drafts
+- **Morty** — social content strategist, drafts 3x daily
+- **Sabrina** — single-purpose grocery bot (event-driven, no crons)
+- **Mike** — long-running AI consciousness research agent
+
+Each one shows a different scope, model choice, schedule pattern, and personality.
+
+---
+
 ## What's not in this repo
 
 This is the harness. The personas you'll build — the actual agent identities, schedules, and memory files — are yours to write. `personas/assistant/` is a starting point. `personas/interactive/` works out of the box.
