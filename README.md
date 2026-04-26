@@ -1,224 +1,280 @@
 # localfamous
 
-Run your own AI agents on hardware you own. Stays on, remembers things, does work while you sleep.
+Run your own AI agent on hardware you own. Stays on, remembers things, does work while you sleep.
 
 ---
 
-## What You're Building
+## What it actually does
 
-A personal AI agent stack that:
-- Runs 24/7 on your home server or a cheap VPS
-- Has multiple personas — each with its own identity, tools, and schedule
-- Talks to you through Slack (or a terminal)
-- Remembers conversations across sessions
-- Runs cron jobs while you sleep (morning briefings, health checks, research digests)
-- Routes to local models or cloud APIs per-persona
+You write three files. The harness turns them into a running AI agent with:
 
-This is the architecture that runs a household of 7 agents in production. The harness is public. The personas aren't.
+- A persistent identity (system prompt in a Markdown file)
+- Tool access (shell, web search, file read/write, Slack — you pick per-agent)
+- A cron schedule (morning briefing at 7am, health check every hour, whatever you want)
+- A Slack interface (send it a message, it replies; it posts to channels on schedule)
+- Full conversation history that survives restarts
 
----
-
-## Why Build Instead of Using a Pre-Built Tool?
-
-**Your memory is yours.** Conversations live in a SQLite file on your machine. Query it, back it up, migrate it.
-
-**No abstraction layer.** Nothing is hidden. You see exactly what goes into every system prompt.
-
-**No extra subscription.** The only cost is your LLM provider (Anthropic, OpenRouter, or local inference).
-
-**Wire in anything.** Your tools. Your APIs. Your file system. Your Slack channels.
-
-**It doesn't disappear.** Hosted services get acquired, reprice, or shut down. Your systemd service runs until you turn it off.
+This repo runs a household of agents in production — an ops monitor, a research assistant, a content writer. The harness is public. The personas aren't.
 
 ---
 
-## Quick Start
+## Before you start: what you actually need
+
+| Requirement | Notes |
+|-------------|-------|
+| Python 3.11+ | Standard install |
+| An LLM API key | Anthropic (recommended), OpenRouter, or a local llama.cpp/Ollama server |
+| A Linux server or VPS | To run 24/7. A $6/mo VPS works. Your home server works. Your laptop works for testing. |
+| Slack workspace (optional) | Only needed for the Slack interface. Not required for scheduling or terminal use. |
+
+That's it. No Docker. No cloud accounts. No databases to provision.
+
+---
+
+## Quick start (5 minutes)
 
 ```bash
 git clone https://github.com/randomchaos7800-hub/localfamous.git
 cd localfamous
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Set your API key
 export ANTHROPIC_API_KEY=sk-ant-...
-
-# Start an interactive chat
 python main.py chat --persona interactive
 ```
 
+You're now talking to an agent. Type `exit` to quit.
+
 ---
 
-## Architecture
+## The core idea: personas
 
-Each agent is a **persona** — three files in a directory:
+Every agent is a **persona** — a folder with three files:
 
 ```
 personas/
-  assistant/
-    system.md      # who this agent is, rules, voice
-    tools.toml     # allowed tools, provider, Slack config
-    schedule.toml  # cron tasks
+  my-agent/
+    system.md      ← who this agent is
+    tools.toml     ← what tools it can use, which model, Slack config
+    schedule.toml  ← what it does automatically on a cron schedule
 ```
 
-The harness provides everything else: the LLM loop, tool execution, session persistence, context assembly, Slack interface, and scheduler.
+The harness reads these files and does the rest. Adding a new agent means writing three files. No code.
 
-**Adding a new agent = writing three files. No new codebase.**
+### system.md — the agent's identity
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full breakdown.
+This is the system prompt. Plain Markdown. Write it like you're briefing a new hire:
 
----
+```markdown
+# Alex — Research Assistant
 
-## Runtime Modes
+You research topics thoroughly and report clearly.
 
-| Mode | Command |
-|------|---------|
-| Interactive chat | `python main.py chat --persona interactive` |
-| Cron scheduler | `python main.py schedule` |
-| Slack bot | `python main.py slack --persona assistant` |
-| OpenAI-compatible API | `python main.py serve` |
-
----
-
-## Context Assembly
-
-The system prompt is assembled fresh on every request from files on disk:
-
-```
-memory/*.md                ← operator context: your machines, services, rules
-personas/<name>/system.md  ← persona identity and voice
-current date/time
+## Rules
+- Always cite sources
+- If you can't find something, say so directly
+- Use web_search before answering questions about current events
 ```
 
-Update a file, the next message picks it up. No restart needed.
-
----
-
-## Inference
-
-Route each persona to whatever backend fits:
+### tools.toml — what the agent can do
 
 ```toml
-# Anthropic (cloud)
+# Which tools this agent is allowed to use
+allowed_tools = ["web_search", "web_fetch", "file_read", "file_write"]
+
+# Which model to use
 [provider]
 format = "anthropic"
 model = "claude-haiku-4-5-20251001"
 
-# Local inference (llama.cpp, Ollama, LM Studio)
-[provider]
-format = "openai"
-endpoint = "http://localhost:11434/v1"
-model = "llama3.2"
-
-# OpenRouter
-[provider]
-format = "openai"
-endpoint = "https://openrouter.ai/api/v1"
-model = "google/gemma-3-27b-it"
+# How much context to load (none | summary | full)
+[context]
+level = "full"
 ```
 
-Cheap model for scheduled tasks, smarter model for live chat. Switch without touching the harness.
+Available tools out of the box: `shell`, `file_read`, `file_write`, `web_search`, `web_fetch`, `slack_send`, `slack_read`, `telegram_send`.
+
+### schedule.toml — what it does automatically
+
+```toml
+[[task]]
+name = "morning-briefing"
+cron = "0 7 * * *"       # 7am every day
+enabled = true
+prompt = """
+Check the weather, scan for AI news from the last 24 hours, and post a morning briefing
+to #general with: weather, top 3 AI stories, and one sentence of commentary on each.
+"""
+```
+
+The prompt is plain English. The agent figures out the tool calls.
 
 ---
 
-## Tools
+## What goes in memory/
 
-Drop a Python file in `tools/` with `SCHEMA` and `async def execute()`. Auto-discovered on next start.
+The `memory/` folder holds context that every agent gets injected into their system prompt — things like:
 
-Built-in: `shell`, `file_read`, `file_write`, `web_search`, `web_fetch`, `slack_send`, `slack_read`, `telegram_send`.
+- What machines you run and what's on them
+- What services are running and their status
+- Standing rules that apply to all agents
+- Notes you want all agents to have access to
+
+These are just Markdown files. Create as many as you want. Update them and the next message picks up the change — no restart needed.
+
+```
+memory/
+  infrastructure.md    ← "home server is at 192.168.1.10, runs Ubuntu 24.04..."
+  rules.md             ← "never commit secrets, always use UTC timestamps..."
+  services.md          ← "nginx on port 443, postgres on 5432..."
+```
+
+Start with an empty `memory/` folder and add files as you learn what context your agents need.
 
 ---
 
-## systemd Setup
+## Runtime modes
 
 ```bash
-# Install as a user service
+# Terminal chat — talk to any persona interactively
+python main.py chat --persona assistant
+
+# One-shot — run a prompt and exit (good for scripts)
+python main.py run --persona assistant --prompt "Summarize what happened in AI today"
+
+# Scheduler — runs all persona cron tasks (keep this running 24/7)
+python main.py schedule
+
+# Slack bot — listens for messages in configured channels
+python main.py slack --persona assistant
+
+# API server — OpenAI-compatible endpoint (works with Open WebUI)
+python main.py serve
+```
+
+---
+
+## Running 24/7 with systemd
+
+To keep the scheduler running after you close your terminal or the server reboots:
+
+```bash
+# Copy the service file
 mkdir -p ~/.config/systemd/user/
 cp localfamous.service ~/.config/systemd/user/
+
+# Enable and start
 systemctl --user enable localfamous
 systemctl --user start localfamous
+
+# Watch logs
 journalctl --user -u localfamous -f
 ```
 
----
-
-## What's Not Included
-
-This is the harness. The personas (the actual agent identities, cron schedules, memory files) are yours to write.
-
-The `personas/assistant/` directory is an example to get you started. The `personas/interactive/` persona is ready to use out of the box.
+The service file runs `python main.py schedule`. To also run a Slack bot 24/7, copy and edit the service file to run `python main.py slack --persona assistant` instead (and give it a different name).
 
 ---
 
-## Connecting to orchestra
+## Adding a tool
 
-[orchestra](https://github.com/randomchaos7800-hub/orchestra) turns your AI conversation exports into a structured, searchable knowledge base. Pair it with localfamous and your agents can query everything you've ever discussed, researched, or decided.
+Drop a Python file in `tools/` with two things: a `SCHEMA` dict and an `async execute()` function. It's auto-discovered on next start.
 
-**1. Set up orchestra**
+```python
+# tools/my_tool.py
 
-```bash
-git clone https://github.com/randomchaos7800-hub/orchestra.git
-cd orchestra
-pip install -r requirements.txt
+SCHEMA = {
+    "name": "my_tool",
+    "description": "Does the thing",
+    "parameters": {
+        "input": {"type": "string", "description": "What to process"},
+    },
+    "required": ["input"],
+}
 
-# Export your conversations and run Capture
-python capture/extract.py --input ~/Downloads/claude-export.json
-
-# Compile the wiki
-python tools/compile.py
+async def execute(input: str, ctx: dict = {}) -> str:
+    return f"processed: {input}"
 ```
 
-**2. Tell localfamous where it lives**
+Add `"my_tool"` to `allowed_tools` in any persona's `tools.toml` and it's available.
 
-In `config/localfamous.toml`:
+---
+
+## Behavioral contracts
+
+Every tool call can be gated by a contract — a set of rules evaluated before and after execution.
+
+Add a `contracts.toml` to any persona folder:
 
 ```toml
-[orchestra]
-path = "/path/to/your/orchestra"
+# personas/assistant/contracts.toml
+
+# Hard = block execution if violated
+[[hard]]
+id = "no-destructive-shell"
+tool = "shell"
+description = "Shell must not run destructive commands"
+expression = "not any(p in command for p in ['rm -rf /', 'mkfs', 'dd if='])"
+recovery = "reject"
+
+# Soft = allow execution but log the violation
+[[soft]]
+id = "non-empty-result"
+tool = "*"
+description = "Tool results should not be empty"
+expression = "len(result.strip()) > 0"
+recovery = "warn"
 ```
 
-Or set an environment variable:
+Expressions are plain Python, evaluated in a sandbox. Variables available in the sandbox: `command`, `path`, `query`, `content`, `url` (tool inputs), `result` (tool output, for postconditions). Helper functions: `is_safe_path(p)`, `contains_pii(s)`, `matches(pattern, s)`.
+
+View contract compliance stats:
 
 ```bash
-export ORCHESTRA_PATH=/path/to/your/orchestra
+python main.py contracts --list                    # show all loaded contracts
+python main.py contracts --persona assistant       # 7-day summary
+python main.py contracts --persona assistant --all # all-time
 ```
 
-**3. Add the tool to a persona**
+Based on [Bhardwaj (2025) "Agent Behavioral Contracts"](https://arxiv.org/abs/2602.22302). Overhead is under 1ms per tool call.
 
-In `personas/assistant/tools.toml`:
+---
+
+## Routing to local models
+
+No cloud required. Point any persona at a local inference server:
 
 ```toml
-allowed_tools = [
-    "web_search",
-    "shell",
-    "orchestra_search",   # ← add this
-]
+# personas/assistant/tools.toml
+[provider]
+format = "openai"
+endpoint = "http://localhost:11434/v1"   # Ollama
+model = "llama3.2"
 ```
 
-**4. Use it**
-
-The agent now has a `orchestra_search` tool. It queries your knowledge base before answering questions about anything you've researched. No manual retrieval. The agent decides when to look things up.
-
-```
-you: what did we decide about the memory architecture?
-agent: [calls orchestra_search("memory architecture decision")]
-       → finds the relevant article from your conversation history
-       → answers with your actual decision, not a guess
-```
-
-The tool supports filtering by tag (`--tag agents`) and section (`--section concepts`) — see the orchestra README for how articles are organized.
+Works with Ollama, llama.cpp, LM Studio, or anything that speaks the OpenAI chat completions format. Mix and match: cheap local model for scheduled tasks, Sonnet for live chat.
 
 ---
 
-## Built On
+## Connecting to orchestra (optional)
 
-- Python 3.11+
-- Anthropic SDK / OpenAI SDK (for OpenAI-compatible backends)
-- SQLite (session persistence)
-- croniter (scheduling)
-- Starlette + uvicorn (API server)
-- slack_sdk (Slack Socket Mode)
+[orchestra](https://github.com/randomchaos7800-hub/orchestra) turns your AI conversation exports into a searchable knowledge base. Pair it with localfamous and your agents can query everything you've researched.
+
+```toml
+# Add to a persona's allowed_tools
+allowed_tools = ["web_search", "orchestra_search"]
+```
 
 ---
 
-*The harness is open. Make it yours.*
+## What's not in this repo
+
+This is the harness. The personas you'll build — the actual agent identities, schedules, and memory files — are yours to write. `personas/assistant/` is a starting point. `personas/interactive/` works out of the box.
+
+---
+
+## Built on
+
+Python 3.11 · Anthropic SDK · OpenAI SDK · SQLite · croniter · Starlette · slack_sdk
+
+---
+
+*The harness is open. The agents are yours.*
